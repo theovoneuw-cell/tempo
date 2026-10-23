@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Tempo</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Tempo">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#121211">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/favicon-32.png">
+<link rel="stylesheet" href="fonts.css">
+<style>
+  :root {
+    --bg: #121211; --ivory: #F1EEE6; --dim: rgba(241, 238, 230, .45); --faint: rgba(241, 238, 230, .14);
+    --amber: #FF9E3D;
+    --sans: 'Geist', -apple-system, system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; background: var(--bg); color: var(--ivory); font-family: var(--sans); overflow: hidden;
+    overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+  /* Tout l'écran est la zone de frappe */
+  #pad { position: fixed; inset: 0; touch-action: none; cursor: pointer;
+    display: grid; place-items: center; }
+
+  .top { position: fixed; top: calc(env(safe-area-inset-top) + 14px); left: 0; right: 0; z-index: 2;
+    display: flex; justify-content: center; align-items: center; gap: 12px; pointer-events: none; }
+  .top svg { width: 22px; height: 22px; }
+
+  .seg { display: flex; padding: 3px; border-radius: 999px; background: rgba(241, 238, 230, .07); pointer-events: auto; }
+  .seg button { font: 500 15px var(--sans); color: var(--dim); background: none; border: 0;
+    padding: 8px 18px; border-radius: 999px; transition: background .15s, color .15s; }
+  .seg button[aria-pressed="true"] { color: var(--ivory); background: rgba(241, 238, 230, .13); }
+
+  .view[hidden] { display: none !important; }
+
+  .stage { position: relative; width: min(78vw, 330px); aspect-ratio: 1; display: grid; place-items: center; pointer-events: none; }
+  .ring { position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--faint); }
+  .wave { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--amber); opacity: 0; }
+  .wave.go { animation: wave .55s cubic-bezier(.2, .7, .3, 1); }
+  @keyframes wave { from { opacity: .9; transform: scale(.9); } to { opacity: 0; transform: scale(1.12); } }
+
+  .read { text-align: center; }
+  .bpm { font-size: clamp(88px, 30vw, 124px); font-weight: 400; letter-spacing: -.05em; line-height: 1;
+    font-variant-numeric: tabular-nums; transition: color .3s; }
+  .bpm.idle { font-size: 52px; letter-spacing: -.03em; }
+  .bpm.done { color: var(--amber); }
+  .hint { margin-top: 10px; font-size: 15px; color: var(--dim); min-height: 1.3em; }
+
+  .pill { font: 500 16px var(--sans); color: var(--dim); background: rgba(241, 238, 230, .07); border: 0;
+    padding: 13px 26px; border-radius: 999px; transition: background .15s, opacity .2s; }
+  .pill:active { background: rgba(241, 238, 230, .14); }
+  .pill.off { opacity: 0; pointer-events: none; }
+  #clear { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 22px); transform: translateX(-50%); }
+
+  /* --- Gamme --- */
+  #gamme { position: fixed; inset: 0; display: flex; flex-direction: column;
+    padding: calc(env(safe-area-inset-top) + 70px) 16px calc(env(safe-area-inset-bottom) + 22px); }
+  .g-res { flex: 1; display: grid; place-content: center; text-align: center; gap: 12px; padding: 0 8px; }
+  .g-key { font-size: clamp(38px, 12vw, 52px); font-weight: 500; letter-spacing: -.035em; line-height: 1.05; }
+  .g-key.found { color: var(--amber); }
+  .g-key.soft { font-size: 32px; letter-spacing: -.025em; }
+  .g-sub { font-size: 16px; line-height: 1.45; color: var(--dim); text-wrap: balance; }
+
+  .kb { position: relative; height: clamp(170px, 27vh, 240px); display: flex; gap: 3px; touch-action: none; }
+  .k { position: relative; display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+    padding-bottom: 12px; gap: 8px; font-size: 13px; font-weight: 500; transition: background .12s, filter .12s; }
+  .k.w { flex: 1; background: var(--ivory); color: rgba(18, 18, 17, .5); border-radius: 4px 4px 10px 10px; }
+  .k.b { position: absolute; top: 0; z-index: 1; width: 9.6%; height: 60%; background: #2A2A27;
+    border-radius: 0 0 7px 7px; box-shadow: 0 0 0 2px var(--bg); }
+  .k { overflow: hidden; }
+  .k > * { position: relative; }
+  /* Appui long : la touche se remplit jusqu'à ce que la note soit gardée */
+  .k::before { content: ''; position: absolute; inset: 0; background: var(--amber); opacity: .55;
+    transform: scaleY(0); transform-origin: bottom; }
+  .k.hold::before { transform: scaleY(1); transition: transform .45s linear; }
+  .k.down { filter: brightness(.82); }
+  .k.b.down { filter: brightness(1.5); }
+  .k.on { background: var(--amber); color: rgba(18, 18, 17, .7); }
+  .k .mk { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); opacity: 0; transition: opacity .15s; }
+  .k.w .mk { background: rgba(18, 18, 17, .35); }
+  .k.hint .mk { opacity: 1; }
+
+  .g-bar { display: flex; justify-content: center; gap: 10px; margin-top: 18px; min-height: 50px; }
+  .g-bar .off, #solo.off { display: none; }
+  .link { justify-self: center; font: 500 15px var(--sans); color: var(--dim); background: none; border: 0;
+    padding: 8px 14px; border-radius: 999px; }
+  .link:active { background: rgba(241, 238, 230, .08); }
+  .link.off { visibility: hidden; }
+
+  .bpmset { display: flex; align-items: center; border-radius: 999px; background: rgba(241, 238, 230, .07); }
+  .bpmset button { width: 46px; height: 50px; border: 0; background: none; color: var(--ivory);
+    font: 400 22px var(--sans); border-radius: 999px; }
+  .bpmset button:active { background: rgba(241, 238, 230, .1); }
+  .bpmset label { display: flex; align-items: baseline; gap: 5px; font-size: 14px; color: var(--dim); }
+  .bpmset input { width: 3.1ch; border: 0; background: none; color: var(--ivory); text-align: right; padding: 0;
+    font: 500 18px var(--sans); font-variant-numeric: tabular-nums; outline: none; -webkit-user-select: text; user-select: text; }
+  #solo { display: inline-flex; align-items: center; gap: 9px; color: var(--ivory); }
+  #solo svg { width: 14px; height: 14px; fill: currentColor; }
+  #solo.on { color: var(--amber); background: rgba(255, 158, 61, .12); }
+  .k.lit { filter: brightness(1.35) saturate(.75); }
+
+  /* Interrupteur caché : Safari iOS 18+ vibre quand il bascule */
+  #hap { position: fixed; left: -100px; top: 0; opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<section class="view" id="tempo">
+  <div id="pad">
+    <div class="stage">
+      <div class="ring"></div>
+      <div class="wave" id="wave"></div>
+      <div class="read">
+        <div class="bpm idle" id="bpm">Tape</div>
+        <div class="hint" id="hint">en rythme, n’importe où</div>
+      </div>
+    </div>
+  </div>
+  <button class="pill off" id="clear">Effacer</button>
+</section>
+
+<section class="view" id="gamme" hidden>
+  <div class="g-res">
+    <div class="g-key" id="gKey">Gamme</div>
+    <div class="g-sub" id="gSub"></div>
+    <button class="link off" id="gClear">Effacer</button>
+  </div>
+  <div class="kb" id="kb"></div>
+  <div class="g-bar">
+    <div class="bpmset off" id="bpmSet">
+      <button id="bpmDown" aria-label="Moins vite">−</button>
+      <label><input id="bpmIn" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" value="90"> BPM</label>
+      <button id="bpmUp" aria-label="Plus vite">+</button>
+    </div>
+    <button class="pill off" id="solo"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="soloIcon" d="M4 2.5v11l9.5-5.5z"/></svg><span id="soloTxt">Solo</span></button>
+  </div>
+</section>
+
+<header class="top">
+  <svg viewBox="0 0 100 100" aria-hidden="true">
+    <circle cx="50" cy="50" r="35" fill="none" stroke="#F1EEE6" stroke-opacity=".22" stroke-width="5"/>
+    <circle cx="50" cy="50" r="23.5" fill="none" stroke="#F1EEE6" stroke-opacity=".6" stroke-width="6"/>
+    <circle cx="50" cy="50" r="12.5" fill="#FF9E3D"/>
+  </svg>
+  <nav class="seg" id="nav">
+    <button data-view="tempo" aria-pressed="true">Tempo</button>
+    <button data-view="gamme" aria-pressed="false">Gamme</button>
+  </nav>
+</header>
+
+<label id="hap"><input type="checkbox" switch></label>
+
+<script src="app.js"></script>
+</body>
+</html>
